@@ -1,11 +1,25 @@
-30 Days of Voice Agents starting now!
+# 30 Days of AI Voice Agents 🔊
 
-Day 1: Project Setup
+Welcome to Murf AI’s 30-day coding challenge! In this repo, you'll find daily tasks, starter code, and resources to help you build your very own AI-powered Voice Agent — one day at a time.
 
-Task: Initialize a Python backend using a framework like Flask or FastAPI. Create a basic index.html file and a corresponding JavaScript file for the frontend. Serve the HTML page from your Python server.
+## 🧠 What’s Included
+- 30 bite-sized coding tasks (1 per day)
+- Tools for building with LLMs, TTS, STT, and voice interaction
+- Templates and examples for fast iteration
+- Final project: A deployable AI Voice Agent
 
-Instructions:
+## 🎁 Rewards
+- AI Agent Developer Certificate  
+- Letter of Appreciation  
+- Free Murf API Credits (100K+ TTS characters)  
+- Exclusive Swag
 
-Complete the task, take a screenshot and post on LinkedIn by end of day today.
+## 📅 Challenge Dates
+**August 2 – September 3, 2025**
 
-Submit here after you are done: https://forms.gle/4HocRJbAhESLVUAH9
+## 🚀 Register Now  
+[https://lu.ma/v4rikdkw?tk=3fHZvY](https://lu.ma/v4rikdkw?tk=3fHZvY)
+
+---
+
+Let me know if you want badges, GitHub Actions for submissions, or a project board for daily tasks.
