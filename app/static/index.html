@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>30 Days of AI Voice Agents | TTS Playback</title>
+  <title>30 Days of AI Voice Agents</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
     tailwind.config = {
@@ -21,249 +21,117 @@
 </head>
 <body class="bg-primary text-gray-100 min-h-screen flex flex-col items-center">
   <div class="w-full max-w-3xl mx-auto p-6 md:p-8 my-8 bg-secondary rounded-xl shadow-2xl">
+
+    <!-- Header -->
     <header class="text-center mb-8 pb-6 border-b border-accent">
       <h1 class="text-accent text-3xl md:text-4xl font-bold mb-2">30 Days of AI Voice Agents</h1>
       <p class="text-gray-400">Presented by <span class="text-accent font-bold">Murf.ai</span></p>
-      <p class="text-gray-400 mt-2">Day <span class="text-accent font-bold">1</span>: Text-to-Speech Playground</p>
+      <p class="text-gray-400 mt-2">Day 9: Full Non-Streaming Pipeline</p>
     </header>
 
-    <div class="bg-gray-800 p-4 rounded-lg mb-6 border-l-4 border-accent">
-      <h2 class="text-accent text-xl font-semibold mb-2">Today's Challenge</h2>
-      <p class="text-gray-300">Convert any text to natural sounding speech with Murf.ai's voice technology.</p>
-    </div>
-
-    <form id="tts-form" class="flex flex-col gap-4">
-      <div>
-        <label for="tts-input" class="block text-gray-300 mb-2">Enter your text</label>
-        <textarea 
-          id="tts-input" 
-          rows="4"
-          class="w-full p-4 bg-gray-700 border-2 border-gray-600 rounded-lg text-gray-100 focus:outline-none focus:border-accent transition"
-          placeholder="Type anything you'd like to hear spoken aloud..."
-          required></textarea>
-      </div>
-
-      <button 
-        type="submit"
-        class="bg-accent text-primary font-bold py-3 px-6 rounded-lg hover:bg-green-400 hover:shadow-lg hover:-translate-y-1 transition transform">
-        Generate Audio
-      </button>
-    </form>
-
-    <div id="audio-container" class="mt-8 hidden">
-      <h3 class="text-accent text-xl font-semibold mb-4">Your Generated Audio</h3>
-      <audio id="tts-audio" controls class="w-full rounded-lg"></audio>
-      <div class="flex justify-end mt-2">
-        <button id="download-btn" class="text-accent hover:text-green-300 flex items-center gap-2">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-            <path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clip-rule="evenodd" />
-          </svg>
-          Download
-        </button>
-      </div>
-    </div>
-
-    <!-- ======= Echo Bot Section (Day 4) ======= -->
-    <section id="echo-section" class="mt-10 bg-gray-800 p-4 rounded-lg border-l-4 border-accent">
-      <h1 class="text-accent text-2xl font-bold mb-4">Echo Bot</h1>
-
-      <p class="text-gray-300 mb-4">Record a short clip from your microphone and play it back.</p>
-
-      <div class="flex flex-col md:flex-row gap-3 items-start md:items-center">
-        <div class="flex gap-2">
-          <button id="start-record-btn" class="bg-accent text-primary font-bold py-2 px-4 rounded-lg hover:bg-green-400 transition" type="button">Start Recording</button>
-          <button id="stop-record-btn" class="bg-gray-600 text-gray-200 font-semibold py-2 px-4 rounded-lg hover:bg-gray-500 transition" type="button" disabled>Stop Recording</button>
-          <button id="download-echo-btn" class="text-accent hover:text-green-300 flex items-center gap-2 ml-2" type="button" disabled>
-            Download
-          </button>
-        </div>
-
-        <div id="record-status" class="ml-0 md:ml-4 text-sm text-gray-300 flex items-center gap-2">
-          <svg id="red-dot" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 8 8" width="10" height="10" class="hidden">
-            <circle cx="4" cy="4" r="4" fill="#ff4d4d"></circle>
-          </svg>
-          <span id="status-text">Idle</span>
-        </div>
-      </div>
-
-      <div class="mt-4">
-        <audio id="echo-audio" controls class="w-full rounded-lg"></audio>
+    <!-- TTS -->
+    <section class="mb-10">
+      <h2 class="text-accent text-xl font-semibold mb-4">Text-to-Speech</h2>
+      <form id="tts-form" class="flex flex-col gap-4">
+        <textarea id="tts-input" rows="4" class="w-full p-4 bg-gray-700 border-2 border-gray-600 rounded-lg text-gray-100 focus:outline-none focus:border-accent transition" placeholder="Type text here..." required></textarea>
+        <button type="submit" class="bg-accent text-primary font-bold py-3 px-6 rounded-lg hover:bg-green-400 transition">Generate Audio</button>
+      </form>
+      <div id="audio-container" class="mt-6 hidden">
+        <audio id="tts-audio" controls class="w-full rounded-lg"></audio>
+        <button id="download-btn" class="mt-2 text-accent hover:text-green-300">Download Audio</button>
       </div>
     </section>
-    <!-- ======= End Echo Bot Section ======= -->
+
+    <!-- LLM Voice Agent -->
+    <section>
+      <h2 class="text-accent text-xl font-bold mb-4">LLM Voice Agent (Speech → LLM → Murf Voice)</h2>
+      <div class="flex gap-2">
+        <button id="start-record-btn" class="bg-accent text-primary font-bold py-2 px-4 rounded-lg hover:bg-green-400">Start Recording</button>
+        <button id="stop-record-btn" class="bg-gray-600 text-gray-200 font-semibold py-2 px-4 rounded-lg hover:bg-gray-500" disabled>Stop</button>
+      </div>
+      <p id="record-status" class="mt-3 text-gray-300">Idle</p>
+      <pre id="transcription-result" class="mt-4 text-accent font-semibold whitespace-pre-wrap"></pre>
+      <audio id="echo-audio" controls class="w-full rounded-lg mt-3"></audio>
+    </section>
 
   </div>
 
-  <footer class="text-gray-500 text-sm mt-auto py-6">
-    <p>© 2023 Murf.ai Voice Challenge. All rights reserved.</p>
-  </footer>
-
   <script>
-    // === TTS form (unchanged) ===
-    document.getElementById('tts-form').addEventListener('submit', async function(e) {
+    // ==== TTS ====
+    document.getElementById('tts-form').addEventListener('submit', async (e) => {
       e.preventDefault();
       const text = document.getElementById('tts-input').value;
-
-      // Replace with your actual Murf.ai endpoint URL
-      const endpoint = '/generate-audio';
-      try {
-        const response = await fetch(endpoint, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text })
-        });
-
-        if (!response.ok) throw new Error('TTS request failed');
-
-        const data = await response.json();
-        const audio = document.getElementById('tts-audio');
-        const container = document.getElementById('audio-container');
-
-        audio.src = data.audio_url;
-        container.classList.remove('hidden');
-
-        // Set up download button
-        document.getElementById('download-btn').onclick = () => {
-          const a = document.createElement('a');
-          a.href = data.audio_url;
-          a.download = `murf-voice-${Date.now()}.mp3`;
-          a.click();
-        };
-      } catch (err) {
-        console.error(err);
-        alert('Failed to generate audio. Check console for details.');
-      }
+      const response = await fetch('/generate-audio/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text })
+      });
+      const data = await response.json();
+      document.getElementById('tts-audio').src = data.audio_url;
+      document.getElementById('audio-container').classList.remove('hidden');
+      document.getElementById('download-btn').onclick = () => {
+        const a = document.createElement('a');
+        a.href = data.audio_url;
+        a.download = `tts-${Date.now()}.mp3`;
+        a.click();
+      };
     });
 
-    // === Echo Bot implementation ===
-    (function() {
-      const startBtn = document.getElementById('start-record-btn');
-      const stopBtn = document.getElementById('stop-record-btn');
-      const echoAudio = document.getElementById('echo-audio');
-      const statusText = document.getElementById('status-text');
-      const redDot = document.getElementById('red-dot');
-      const downloadEchoBtn = document.getElementById('download-echo-btn');
+    // ==== LLM Voice Agent ====
+    let llmRecorder, llmChunks = [];
+    document.getElementById('start-record-btn').onclick = async () => {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      llmRecorder = new MediaRecorder(stream);
+      llmChunks = [];
 
-      let mediaRecorder = null;
-      let audioChunks = [];
-      let streamRef = null;
-      let lastBlob = null;
+      llmRecorder.ondataavailable = e => llmChunks.push(e.data);
 
-      function setRecordingUI(isRecording) {
-        startBtn.disabled = isRecording;
-        stopBtn.disabled = !isRecording;
-        if (isRecording) {
-          redDot.classList.remove('hidden');
-          statusText.textContent = 'Recording...';
-        } else {
-          redDot.classList.add('hidden');
-          statusText.textContent = 'Idle';
-        }
-      }
+      llmRecorder.onstop = async () => {
+        const blob = new Blob(llmChunks, { type: 'audio/webm' });
+        const formData = new FormData();
+        formData.append('file', blob, 'speech.webm');
 
-      async function startRecording() {
-        // Request microphone permission and start recording
+        document.getElementById('record-status').textContent = 'Processing...';
+        document.getElementById('transcription-result').textContent = '';
+
         try {
-          // Prefer audio only
-          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-          streamRef = stream;
+          const resp = await fetch('/llm/query', { method: 'POST', body: formData });
+          const data = await resp.json();
 
-          // Try to pick a mimeType that's commonly supported
-          const mimeTypes = [
-            'audio/webm;codecs=opus',
-            'audio/ogg;codecs=opus',
-            'audio/webm',
-            'audio/ogg'
-          ];
-          let mimeType = '';
-          for (const mt of mimeTypes) {
-            if (MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(mt)) {
-              mimeType = mt;
-              break;
+          if (resp.ok) {
+            // Audio playback
+            if (data.audio_url) {
+              document.getElementById('echo-audio').src = data.audio_url;
+            } else if (data.audio_urls) {
+              document.getElementById('echo-audio').src = data.audio_urls[0];
             }
+
+            // Show both user speech & LLM reply
+            document.getElementById('transcription-result').textContent =
+              `You said: "${data.transcript}"\nLLM: "${data.llm_text}"`;
+
+            document.getElementById('record-status').textContent = 'Done';
+          } else {
+            document.getElementById('record-status').textContent = 'Error';
+            document.getElementById('transcription-result').textContent =
+              `Failed: ${data.detail || 'Unknown error'}`;
           }
-
-          mediaRecorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
-
-          audioChunks = [];
-          mediaRecorder.addEventListener('dataavailable', (e) => {
-            if (e.data && e.data.size > 0) audioChunks.push(e.data);
-          });
-
-          mediaRecorder.addEventListener('stop', () => {
-            const blob = new Blob(audioChunks, { type: audioChunks[0]?.type || 'audio/webm' });
-            lastBlob = blob;
-
-            // Create object url and attach to audio element
-            const url = URL.createObjectURL(blob);
-            echoAudio.src = url;
-            echoAudio.play().catch(()=>{}); // autoplay where allowed
-
-            // Enable download
-            downloadEchoBtn.disabled = false;
-            downloadEchoBtn.onclick = () => {
-              const a = document.createElement('a');
-              a.href = url;
-              // Provide a sensible filename and extension depending on type
-              const ext = blob.type.includes('ogg') ? 'ogg' : (blob.type.includes('mp3') ? 'mp3' : 'webm');
-              a.download = `echo-recording-${Date.now()}.${ext}`;
-              a.click();
-            };
-
-            // Stop all tracks from the stream to release the mic
-            if (streamRef) {
-              streamRef.getTracks().forEach(t => t.stop());
-              streamRef = null;
-            }
-          });
-
-          mediaRecorder.start();
-          setRecordingUI(true);
-
-          // Optional: auto-stop after a certain time (e.g., 30s) to prevent accidental long recordings
-          // Comment out if you don't want auto-stop
-          const maxDurationMs = 30_000;
-          setTimeout(() => {
-            if (mediaRecorder && mediaRecorder.state === 'recording') {
-              stopRecording();
-            }
-          }, maxDurationMs);
-
         } catch (err) {
-          console.error('Error accessing microphone:', err);
-          alert('Could not access microphone. Please allow microphone permissions and try again.');
-          setRecordingUI(false);
+          document.getElementById('record-status').textContent = 'Error';
+          document.getElementById('transcription-result').textContent =
+            `Failed: ${err.message}`;
         }
-      }
+      };
 
-      function stopRecording() {
-        if (!mediaRecorder) return;
-        if (mediaRecorder.state === 'recording') {
-          mediaRecorder.stop();
-        }
-        mediaRecorder = null;
-        setRecordingUI(false);
-      }
+      llmRecorder.start();
+      document.getElementById('record-status').textContent = 'Recording...';
+      document.getElementById('stop-record-btn').disabled = false;
+    };
 
-      // Wire up buttons
-      startBtn.addEventListener('click', (e) => {
-        e.preventDefault();
-        downloadEchoBtn.disabled = true;
-        startRecording();
-      });
-      stopBtn.addEventListener('click', (e) => {
-        e.preventDefault();
-        stopRecording();
-      });
-
-      // Clean up when page unloads
-      window.addEventListener('beforeunload', () => {
-        if (streamRef) {
-          streamRef.getTracks().forEach(t => t.stop());
-        }
-      });
-
-    })();
+    document.getElementById('stop-record-btn').onclick = () => {
+      llmRecorder.stop();
+      document.getElementById('stop-record-btn').disabled = true;
+    };
   </script>
 </body>
 </html>
