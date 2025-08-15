@@ -1,25 +1,70 @@
-# 30 Days of AI Voice Agents 🔊
 
-Welcome to Murf AI’s 30-day coding challenge! In this repo, you'll find daily tasks, starter code, and resources to help you build your very own AI-powered Voice Agent — one day at a time.
+#  AI Voice Agent
+30 Days of AI Voice Agents  with Murf AI
 
-## 🧠 What’s Included
-- 30 bite-sized coding tasks (1 per day)
-- Tools for building with LLMs, TTS, STT, and voice interaction
-- Templates and examples for fast iteration
-- Final project: A deployable AI Voice Agent
+## 🚀 Features
 
-## 🎁 Rewards
-- AI Agent Developer Certificate  
-- Letter of Appreciation  
-- Free Murf API Credits (100K+ TTS characters)  
-- Exclusive Swag
+- **Voice Interaction**: Natural conversation through microphone input
+- **Conversational Memory**: Maintains context across interactions
+- **Real-time Processing**: Streamlined STT → LLM → TTS pipeline
+- **Responsive UI**: Clean interface with visual feedback
 
-## 📅 Challenge Dates
-**August 2 – September 3, 2025**
+### Backend Services
+| Service | Purpose |
+|---------|---------|
+| FastAPI | Python web framework |
+| AssemblyAI | Speech-to-text transcription |
+| Google Gemini | Large language model |
+| Murf.ai | Text-to-speech synthesis |
 
-## 🚀 Register Now  
-[https://lu.ma/v4rikdkw?tk=3fHZvY](https://lu.ma/v4rikdkw?tk=3fHZvY)
+### Frontend
+- HTML,CSS,JS
+- Tailwind CSS
 
----
 
-Let me know if you want badges, GitHub Actions for submissions, or a project board for daily tasks.
+
+
+## Deployment
+
+To deploy this project run
+
+```bash
+  https://github.com/AbyvargheseMandapathel/Murf-AI
+```
+Set up Python environment:
+
+```bash
+python -m venv venv
+source venv/bin/activate  # Linux/Mac
+.\venv\Scripts\activate  # Windows
+```
+
+Install dependencies:
+
+```bash
+pip install -r requirements.txt
+```
+
+#🏃‍♂️ Running the Application
+Start the development server:
+
+```bash
+uvicorn main:app --reload
+```
+
+
+## Environment Variables
+
+To run this project, you will need to add the following environment variables to your .env file
+
+`ASSEMBLYAI_API_KEY`
+
+`MURF_API_KEY`
+
+`GEMINI_API_KEY`
+
+
+## Screenshots
+
+![App Screenshot](https://via.placeholder.com/468x300?text=App+Screenshot+Here)
+
