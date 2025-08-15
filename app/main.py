@@ -7,6 +7,7 @@ import requests
 import assemblyai as aai
 from dotenv import load_dotenv
 from typing import Dict, List
+import re
 
 # Load environment variables
 load_dotenv()
@@ -155,6 +156,10 @@ async def query_llm_audio(file: UploadFile = File(...)):
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    
+    
+chat_histories = {}
+
 
 @app.post("/agent/chat/{session_id}")
 async def agent_chat(session_id: str = Path(...), file: UploadFile = File(...)):
@@ -173,13 +178,13 @@ async def agent_chat(session_id: str = Path(...), file: UploadFile = File(...)):
         if file_size == 0:
             raise HTTPException(status_code=400, detail="Empty audio file")
 
-        # STT
+        # Speech-to-text
         try:
             user_text = transcribe_audio(file_path)
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Transcription failed: {str(e)}")
 
-        if not user_text or len(user_text.strip()) == 0:
+        if not user_text.strip():
             raise HTTPException(status_code=400, detail="Empty transcription")
 
         chat_histories[session_id].append({"role": "user", "text": user_text})
@@ -193,12 +198,26 @@ async def agent_chat(session_id: str = Path(...), file: UploadFile = File(...)):
         # LLM
         try:
             llm_text = query_gemini(conversation)
+
+            # ✅ Clean unwanted text for voice output
+            # Remove "Assistant:" at start
+            if llm_text.lower().startswith("assistant:"):
+                llm_text = llm_text.split(":", 1)[1].strip()
+
+            # Remove any stage directions inside (), [], {}
+            llm_text = re.sub(r'\([^)]*\)', '', llm_text)
+            llm_text = re.sub(r'\[[^\]]*\]', '', llm_text)
+            llm_text = re.sub(r'\{[^}]*\}', '', llm_text)
+
+            # Collapse multiple spaces into one
+            llm_text = re.sub(r'\s+', ' ', llm_text).strip()
+
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"LLM query failed: {str(e)}")
 
         chat_histories[session_id].append({"role": "assistant", "text": llm_text})
 
-        # TTS
+        # Text-to-speech
         try:
             audio_url = generate_murf_audio(llm_text)
         except Exception as e:
