@@ -1,5 +1,5 @@
 # main.py
-from fastapi import FastAPI, File, UploadFile, Path, HTTPException
+from fastapi import FastAPI, File, UploadFile, Path, HTTPException, WebSocket
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -132,3 +132,14 @@ async def agent_chat(session_id: str = Path(...), file: UploadFile = File(...)):
     except Exception as e:
         logger.error(f"Agent chat failed: {e}")
         raise HTTPException(status_code=500, detail="Internal server error.")
+    
+    
+# ----------------------------
+# NEW: WebSocket Endpoint
+# ----------------------------
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    await websocket.accept()
+    while True:
+        data = await websocket.receive_text()
+        await websocket.send_text(f"Message received: {data}")
