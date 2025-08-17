@@ -39,13 +39,13 @@
   <div class="w-full max-w-2xl bg-secondary rounded-xl shadow-2xl p-6 flex flex-col h-[85vh]">
     <header class="text-center mb-6">
       <h1 class="text-accent text-3xl font-bold">Voice Assistant</h1>
-      <p class="text-gray-400 mt-1">Talk naturally with your AI assistant</p>
+      <p class="text-gray-400 mt-1">Streaming audio via WebSocket</p>
     </header>
 
     <!-- Chat History -->
     <div id="chat-box" class="flex-1 bg-gray-800/50 rounded-xl p-4 overflow-y-auto space-y-4 mb-6">
       <div class="text-center text-gray-400 py-8">
-        <p>Press the microphone button to start talking</p>
+        <p>Press the microphone button to start streaming audio</p>
       </div>
     </div>
 
@@ -65,152 +65,103 @@
 
   <audio id="bot-audio" class="hidden"></audio>
 
-  <script>
-    // Generate or retrieve session ID
-    function getOrCreateSessionId() {
-      let sessionId = localStorage.getItem('voiceAgentSessionId');
-      if (!sessionId) {
-        sessionId = crypto.randomUUID();
-        localStorage.setItem('voiceAgentSessionId', sessionId);
-      }
-      return sessionId;
+<script>
+  // Generate or retrieve session ID
+  const SESSION_ID = localStorage.getItem('voiceAgentSessionId') || crypto.randomUUID();
+  localStorage.setItem('voiceAgentSessionId', SESSION_ID);
+
+  // DOM elements
+  const recordBtn = document.getElementById('record-btn');
+  const statusText = document.getElementById('status-text');
+  const chatBox = document.getElementById('chat-box');
+
+  // State
+  let recorder, isRecording = false;
+  let socket = null;
+
+  // Add message to chat
+  function addMessage(role, text) {
+    if (chatBox.children.length === 1 && chatBox.children[0].classList.contains('text-center')) {
+      chatBox.innerHTML = '';
     }
-    const SESSION_ID = getOrCreateSessionId();
+    const msgDiv = document.createElement('div');
+    msgDiv.className = `flex ${role === 'user' ? 'justify-end' : 'justify-start'}`;
+    
+    const bubble = document.createElement('div');
+    bubble.className = role === 'user' 
+      ? 'bg-accent text-primary px-4 py-3 rounded-2xl rounded-br-none max-w-[80%]'
+      : 'bg-gray-700 text-gray-200 px-4 py-3 rounded-2xl rounded-bl-none max-w-[80%]';
+    
+    bubble.textContent = text;
+    msgDiv.appendChild(bubble);
+    chatBox.appendChild(msgDiv);
+    chatBox.scrollTop = chatBox.scrollHeight;
+  }
 
-    // DOM elements
-    const recordBtn = document.getElementById('record-btn');
-    const statusText = document.getElementById('status-text');
-    const chatBox = document.getElementById('chat-box');
-    const botAudio = document.getElementById('bot-audio');
-    const micIcon = document.getElementById('mic-icon');
-
-    // State variables
-    let recorder, chunks = [], isRecording = false;
-
-    // Add message to chat
-    function addMessage(role, text) {
-      // Clear initial placeholder if it exists
-      if (chatBox.children.length === 1 && chatBox.children[0].classList.contains('text-center')) {
-        chatBox.innerHTML = '';
-      }
-
-      const msgDiv = document.createElement('div');
-      msgDiv.className = `flex ${role === 'user' ? 'justify-end' : 'justify-start'}`;
-      
-      const bubble = document.createElement('div');
-      bubble.className = role === 'user' 
-        ? 'bg-accent text-primary px-4 py-3 rounded-2xl rounded-br-none max-w-[80%]'
-        : 'bg-gray-700 text-gray-200 px-4 py-3 rounded-2xl rounded-bl-none max-w-[80%]';
-      
-      bubble.textContent = text;
-      msgDiv.appendChild(bubble);
-      chatBox.appendChild(msgDiv);
-      chatBox.scrollTop = chatBox.scrollHeight;
-    }
-
-    // Start recording
-    async function startRecording() {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        recorder = new MediaRecorder(stream);
-        chunks = [];
-        
-        recorder.ondataavailable = e => chunks.push(e.data);
-        recorder.onstop = handleRecordingStop;
-        recorder.start(100); // Collect data every 100ms
-        
-        isRecording = true;
-        recordBtn.classList.add('animate-wave', 'bg-red-500', 'hover:bg-red-600');
-        micIcon.innerHTML = `<path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line>`;
-        statusText.textContent = "Listening...";
-        
-      } catch (error) {
-        console.error('Recording error:', error);
-        statusText.textContent = "Error accessing microphone";
-        setTimeout(() => statusText.textContent = "Ready", 3000);
-      }
-    }
-
-    // Stop recording
-    function stopRecording() {
-      if (!recorder || !isRecording) return;
-      
-      isRecording = false;
-      recorder.stop();
-      recordBtn.classList.remove('animate-wave', 'bg-red-500', 'hover:bg-red-600');
-      recordBtn.classList.add('bg-gray-500', 'cursor-not-allowed');
-      micIcon.innerHTML = `<path d="M1 1l22 22"></path><path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"></path><path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line>`;
-      statusText.textContent = "Processing...";
-    }
-
-    // Handle recording completion
-    async function handleRecordingStop() {
+  // Start recording and streaming
+  async function startRecording() {
     try {
-        const blob = new Blob(chunks, { type: 'audio/webm' });
-        addMessage('user', "🎤 Processing your voice message...");
+      // Connect WebSocket
+      const wsUrl = `ws://${window.location.host}/ws/audio/${SESSION_ID}`;
+      socket = new WebSocket(wsUrl);
 
-        const formData = new FormData();
-        formData.append('file', blob, 'voice-input.webm');
+      socket.onopen = () => {
+        console.log('WebSocket connected');
+        statusText.textContent = "🎤 Streaming...";
+        addMessage('user', '🎤 Audio stream started...');
+      };
 
-        const response = await fetch(`/agent/chat/${SESSION_ID}`, {
-            method: 'POST',
-            body: formData
-        });
+      socket.onerror = (err) => console.error('WebSocket error:', err);
+      socket.onclose = (e) => console.log('WebSocket closed:', e);
 
-        if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.detail || 'Request failed');
+      // Start recording
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      recorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+
+      // Send chunks every 500ms
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0 && socket?.readyState === WebSocket.OPEN) {
+          socket.send(e.data);
         }
+      };
 
-        const data = await response.json();
-        
-        // Update the user message with actual transcription
-        const lastUserMessage = chatBox.querySelector('.justify-end:last-child');
-        if (lastUserMessage && data.transcript) {
-            lastUserMessage.querySelector('div').textContent = data.transcript;
-        }
-
-        if (data.llm_text) {
-            addMessage('bot', data.llm_text);
-        }
-
-        // Play bot response
-        if (data.audio_url) {
-            botAudio.src = data.audio_url;
-            botAudio.play();
-            statusText.textContent = "Assistant is speaking...";
-            botAudio.onended = resetUI;
-        } else {
-            resetUI();
-        }
-
-    } catch (error) {
-        console.error('Error:', error);
-        statusText.textContent = "Error: " + error.message;
-        addMessage('bot', "Sorry, I couldn't process that. Please try again.");
-        resetUI();
+      recorder.start(500); // Send every 500ms
+      isRecording = true;
+      recordBtn.classList.add('animate-wave', 'bg-red-500');
+    } catch (err) {
+      console.error('Microphone access failed:', err);
+      statusText.textContent = 'Mic error';
+      setTimeout(() => statusText.textContent = 'Ready', 2000);
     }
-}
+  }
 
-    // Reset UI to ready state
-    function resetUI() {
-      recordBtn.classList.remove('bg-gray-500', 'cursor-not-allowed');
-      recordBtn.classList.add('bg-accent', 'hover:bg-accent-dark');
-      micIcon.innerHTML = `<path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line>`;
-      statusText.textContent = "Ready";
+  // Stop recording
+  function stopRecording() {
+    if (recorder && isRecording) {
+      recorder.stop();
+      recorder.stream.getTracks().forEach(t => t.stop()); // Stop mic
+      isRecording = false;
     }
 
-    // Toggle recording
-    recordBtn.addEventListener('click', () => {
-      if (isRecording) {
-        stopRecording();
-      } else {
-        startRecording();
-      }
-    });
+    // Let server close naturally — or keep open
+    if (socket) {
+      // Don't close immediately — let server finish
+      // socket.close(); // ❌ Remove this
+    }
 
-    // Initialize
-    resetUI();
-  </script>
+    recordBtn.classList.remove('animate-wave', 'bg-red-500');
+    statusText.textContent = "Audio streamed!";
+  }
+
+  // Toggle recording
+  recordBtn.addEventListener('click', () => {
+    if (isRecording) {
+      stopRecording();
+    } else {
+      startRecording();
+    }
+  });
+</script>
+
 </body>
 </html>

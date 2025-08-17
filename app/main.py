@@ -1,5 +1,6 @@
 # main.py
-from fastapi import FastAPI, File, UploadFile, Path, HTTPException, WebSocket
+import time
+from fastapi import FastAPI, File, UploadFile, Path, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -135,11 +136,32 @@ async def agent_chat(session_id: str = Path(...), file: UploadFile = File(...)):
     
     
 # ----------------------------
-# NEW: WebSocket Endpoint
+# NEW: WebSocket Endpoint for Audio Streaming
 # ----------------------------
-@app.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket):
+os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
+
+
+@app.websocket("/ws/audio/{session_id}")
+async def websocket_audio_handler(websocket: WebSocket, session_id: str):
     await websocket.accept()
-    while True:
-        data = await websocket.receive_text()
-        await websocket.send_text(f"Message received: {data}")
+
+    # Define file path
+    timestamp = int(time.time())
+    filename = f"audio_{session_id}_{timestamp}.webm"
+    file_path = os.path.join(settings.UPLOAD_DIR, filename)
+
+    try:
+        with open(file_path, "wb") as f:
+            while True:
+                try:
+                    data = await websocket.receive_bytes()
+                    f.write(data)
+                    f.flush()
+                    print(f"Received chunk: {len(data)} bytes")
+                except WebSocketDisconnect:
+                    print("Client disconnected cleanly")
+                    break
+    except Exception as e:
+        print(f"Unexpected error: {e}")
+    finally:
+        print(f"Audio saved to {file_path}")
