@@ -1,4 +1,5 @@
-# main.py
+# main.py - Day 17 Simplified Working Solution
+import asyncio
 import time
 from fastapi import FastAPI, File, UploadFile, Path, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
@@ -12,6 +13,21 @@ from app.utils import save_uploaded_file
 from app.logger import logger
 
 import os
+import assemblyai as aai
+from assemblyai.streaming.v3 import (
+    BeginEvent,
+    StreamingClient,
+    StreamingClientOptions,
+    StreamingError,
+    StreamingEvents,
+    StreamingParameters,
+    TerminationEvent,
+    TurnEvent,
+)
+import asyncio
+
+# Set the AssemblyAI API key globally
+aai.settings.api_key = settings.ASSEMBLYAI_API_KEY
 
 # Application state
 chat_histories: dict = {}
@@ -27,8 +43,7 @@ app.mount("/uploads", StaticFiles(directory=settings.UPLOAD_DIR), name="uploads"
 def read_index():
     return FileResponse("app/static/index.html")
 
-# Endpoints
-
+# Your existing endpoints...
 @app.post("/generate-audio/", response_model=BaseModel)
 def generate_audio(input: schemas.TextInput):
     try:
@@ -133,35 +148,147 @@ async def agent_chat(session_id: str = Path(...), file: UploadFile = File(...)):
     except Exception as e:
         logger.error(f"Agent chat failed: {e}")
         raise HTTPException(status_code=500, detail="Internal server error.")
-    
-    
-# ----------------------------
-# NEW: WebSocket Endpoint for Audio Streaming
-# ----------------------------
+
+# Create upload directory
 os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
 
+# ----------------------------
+# DAY 17: Updated WebSocket + AssemblyAI V3 Real-time Transcription
+# ----------------------------
 
-@app.websocket("/ws/audio/{session_id}")
-async def websocket_audio_handler(websocket: WebSocket, session_id: str):
+
+@app.websocket("/ws/transcribe/{session_id}")
+async def websocket_transcribe_handler(websocket: WebSocket, session_id: str):
+    """
+    Day 17: Final WebSocket handler for real-time transcription using AssemblyAI V3 SDK.
+    """
     await websocket.accept()
-
-    # Define file path
-    timestamp = int(time.time())
-    filename = f"audio_{session_id}_{timestamp}.webm"
-    file_path = os.path.join(settings.UPLOAD_DIR, filename)
+    print(f"\n🎤 === DAY 17: WebSocket Connected ===")
+    print(f"📱 Session ID: {session_id}")
+    
+    client = None
+    # --- Add a flag to track WebSocket connection state ---
+    websocket_closed = False
+    is_connected = True
+    
+    # Get the main thread's event loop
+    main_loop = asyncio.get_running_loop()
 
     try:
-        with open(file_path, "wb") as f:
-            while True:
-                try:
-                    data = await websocket.receive_bytes()
-                    f.write(data)
-                    f.flush()
-                    print(f"Received chunk: {len(data)} bytes")
-                except WebSocketDisconnect:
-                    print("Client disconnected cleanly")
-                    break
+        # --- Event Handlers ---
+        def on_begin(self, event: BeginEvent):
+            print(f"✅ AssemblyAI Session started: {event.id}")
+
+        def on_turn(self, event: TurnEvent):
+            try:
+                if event.transcript.strip():
+                    # Determine if this is a final transcript
+                    if event.end_of_turn:
+                        print(f"\n🎯 FINAL TRANSCRIPT: {event.transcript}")
+                        message = f"✅ {event.transcript}"
+                    else:
+                        print(f"⏳ Partial Turn: {event.transcript}")
+                        message = f"⏳ {event.transcript}"
+                    
+                    # Only try to send if the WebSocket is still open
+                    if not websocket_closed:
+                        main_loop.create_task(send_safe(websocket, message))
+                    else:
+                        print("ℹ️ WebSocket closed, not sending transcript.")
+                        
+            except Exception as e:
+                print(f"❌ Error in on_turn: {e}")
+
+        def on_terminated(self, event: TerminationEvent):
+            print(f"ℹ️ Session terminated: {event.audio_duration_seconds} seconds processed")
+
+        def on_error(self, error: StreamingError):
+            error_msg = f"❌ Streaming Error: {error}"
+            print(error_msg)
+            # Only try to send if the WebSocket is still open
+            if not websocket_closed:
+                main_loop.create_task(send_safe(websocket, error_msg))
+
+        async def send_safe(ws, message):
+            """Safely send message to websocket."""
+            try:
+                await ws.send_text(message)
+            except Exception as e:
+                # This exception is expected if the WebSocket is closed.
+                # We check 'websocket_closed' before sending, so we can ignore this.
+                if "after sending 'websocket.close'" not in str(e):
+                    print(f"⚠️ Unexpected send error: {e}")
+                pass
+
+        # --- Initialize and Connect ---
+        print("🔄 Initializing AssemblyAI V3 StreamingClient...")
+        client = StreamingClient(
+            StreamingClientOptions(
+                api_key=settings.ASSEMBLYAI_API_KEY,
+                api_host="streaming.assemblyai.com",
+            )
+        )
+        
+        client.on(StreamingEvents.Begin, on_begin)
+        client.on(StreamingEvents.Turn, on_turn)
+        client.on(StreamingEvents.Termination, on_terminated)
+        client.on(StreamingEvents.Error, on_error)
+        
+        print("🔗 Connecting to AssemblyAI...")
+        client.connect(
+            StreamingParameters(
+                sample_rate=16000,
+                format_turns=True,
+            )
+        )
+        print("✅ Connected to AssemblyAI successfully!")
+        
+        await websocket.send_text("🎤 Ready to transcribe! Start speaking...")
+
+        # --- Main Audio Processing Loop ---
+        chunk_count = 0
+        while is_connected:
+            try:
+                audio_bytes = await websocket.receive_bytes()
+                chunk_count += 1
+                
+                if chunk_count % 50 == 0:
+                    print(f"📊 Processed {chunk_count} audio chunks")
+                
+                client.stream(audio_bytes)
+                
+            except WebSocketDisconnect:
+                print(f"🔌 Client disconnected: {session_id}")
+                is_connected = False
+                # Mark the WebSocket as closed to prevent further sends
+                websocket_closed = True
+                break
+                
+            except Exception as e:
+                print(f"❌ Error in audio loop: {e}")
+                is_connected = False
+                websocket_closed = True
+                break
+                
     except Exception as e:
-        print(f"Unexpected error: {e}")
+        error_msg = f"❌ Setup error: {e}"
+        print(error_msg)
+        is_connected = False
+        websocket_closed = True
+        try:
+            await websocket.send_text(error_msg)
+        except:
+            pass
+            
     finally:
-        print(f"Audio saved to {file_path}")
+        print("🧹 Cleaning up...")
+        is_connected = False
+        
+        if client:
+            try:
+                client.disconnect(terminate=True)
+                print("✅ AssemblyAI client disconnected")
+            except Exception as e:
+                print(f"ℹ️ Client disconnect: {e}")
+        
+        print("=== DAY 17: Session Complete ===\n")

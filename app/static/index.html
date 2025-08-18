@@ -3,165 +3,253 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>AI Voice Agent</title>
+  <title>Day 17: AssemblyAI Transcription</title>
   <script src="https://cdn.tailwindcss.com"></script>
-  <script>
-    tailwind.config = {
-      theme: {
-        extend: {
-          colors: {
-            primary: '#0f172a',
-            secondary: '#1e293b',
-            accent: '#22d3ee',
-            'accent-dark': '#0ea5e9',
-          },
-          animation: {
-            'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
-            'ping-slow': 'ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite',
-          }
-        }
-      }
-    }
-  </script>
-  <style>
-    @keyframes wave {
-      0% { transform: scale(1); opacity: 1; }
-      50% { transform: scale(1.1); opacity: 0.7; }
-      100% { transform: scale(1); opacity: 1; }
-    }
-    .animate-wave {
-      animation: wave 1.5s ease-in-out infinite;
-    }
-  </style>
 </head>
-<body class="bg-primary text-gray-100 min-h-screen flex flex-col items-center justify-center p-4">
-
-  <div class="w-full max-w-2xl bg-secondary rounded-xl shadow-2xl p-6 flex flex-col h-[85vh]">
-    <header class="text-center mb-6">
-      <h1 class="text-accent text-3xl font-bold">Voice Assistant</h1>
-      <p class="text-gray-400 mt-1">Streaming audio via WebSocket</p>
+<body class="bg-gray-900 text-white min-h-screen flex items-center justify-center p-4">
+  <div class="w-full max-w-4xl bg-gray-800 rounded-xl p-8">
+    <header class="text-center mb-8">
+      <h1 class="text-4xl font-bold text-cyan-400 mb-2">
+        🎙️ Day 17: Real-time Transcription
+      </h1>
+      <p class="text-gray-400">AssemblyAI WebSocket Streaming</p>
+      <div class="mt-4 text-sm bg-gray-700 rounded p-3">
+        <strong>Format:</strong> 16kHz, 16-bit, Mono PCM
+      </div>
     </header>
 
-    <!-- Chat History -->
-    <div id="chat-box" class="flex-1 bg-gray-800/50 rounded-xl p-4 overflow-y-auto space-y-4 mb-6">
-      <div class="text-center text-gray-400 py-8">
-        <p>Press the microphone button to start streaming audio</p>
+    <!-- Transcription Display -->
+    <div id="transcripts" class="bg-gray-900 rounded-lg p-6 h-96 overflow-y-auto mb-6">
+      <div class="text-center text-gray-500 py-20">
+        <div class="text-6xl mb-4">🎧</div>
+        <p>Click Start to begin real-time transcription</p>
       </div>
     </div>
 
+    <!-- Status -->
+    <div class="text-center mb-6">
+      <div id="status" class="text-lg font-medium">Ready</div>
+      <div id="connection" class="text-sm text-gray-500 mt-1">Disconnected</div>
+    </div>
+
     <!-- Controls -->
-    <div class="flex flex-col items-center">
-      <button id="record-btn" class="w-16 h-16 rounded-full bg-accent hover:bg-accent-dark text-primary flex items-center justify-center text-2xl shadow-lg transition-all duration-300 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-accent focus:ring-opacity-50">
-        <svg id="mic-icon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
-          <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
-          <line x1="12" y1="19" x2="12" y2="23"></line>
-          <line x1="8" y1="23" x2="16" y2="23"></line>
-        </svg>
+    <div class="text-center">
+      <button id="startBtn" class="bg-red-500 hover:bg-red-600 text-white font-bold py-4 px-8 rounded-full text-xl shadow-lg">
+        🎤 Start Recording
       </button>
-      <p id="status-text" class="mt-3 text-sm text-gray-400">Ready</p>
+      <button id="stopBtn" class="bg-gray-500 hover:bg-gray-600 text-white font-bold py-4 px-8 rounded-full text-xl shadow-lg ml-4" disabled>
+        ⏹️ Stop Recording
+      </button>
     </div>
   </div>
 
-  <audio id="bot-audio" class="hidden"></audio>
-
 <script>
-  // Generate or retrieve session ID
-  const SESSION_ID = localStorage.getItem('voiceAgentSessionId') || crypto.randomUUID();
-  localStorage.setItem('voiceAgentSessionId', SESSION_ID);
+const SESSION_ID = 'day17-' + Date.now();
+const transcriptsDiv = document.getElementById('transcripts');
+const statusDiv = document.getElementById('status');
+const connectionDiv = document.getElementById('connection');
+const startBtn = document.getElementById('startBtn');
+const stopBtn = document.getElementById('stopBtn');
 
-  // DOM elements
-  const recordBtn = document.getElementById('record-btn');
-  const statusText = document.getElementById('status-text');
-  const chatBox = document.getElementById('chat-box');
+let socket = null;
+let audioContext = null;
+let mediaStream = null;
+let processor = null;
+let isRecording = false;
+let transcriptCount = 0;
 
-  // State
-  let recorder, isRecording = false;
-  let socket = null;
-
-  // Add message to chat
-  function addMessage(role, text) {
-    if (chatBox.children.length === 1 && chatBox.children[0].classList.contains('text-center')) {
-      chatBox.innerHTML = '';
+// Clear placeholder
+function clearPlaceholder() {
+    if (transcriptsDiv.querySelector('.text-center')) {
+        transcriptsDiv.innerHTML = '';
     }
-    const msgDiv = document.createElement('div');
-    msgDiv.className = `flex ${role === 'user' ? 'justify-end' : 'justify-start'}`;
+}
+
+// Add transcript
+function addTranscript(type, text) {
+    clearPlaceholder();
     
-    const bubble = document.createElement('div');
-    bubble.className = role === 'user' 
-      ? 'bg-accent text-primary px-4 py-3 rounded-2xl rounded-br-none max-w-[80%]'
-      : 'bg-gray-700 text-gray-200 px-4 py-3 rounded-2xl rounded-bl-none max-w-[80%]';
+    const div = document.createElement('div');
+    div.className = `mb-3 p-3 rounded ${type === 'final' ? 'bg-green-900 border-l-4 border-green-400' : 'bg-blue-900 border-l-4 border-blue-400'}`;
     
-    bubble.textContent = text;
-    msgDiv.appendChild(bubble);
-    chatBox.appendChild(msgDiv);
-    chatBox.scrollTop = chatBox.scrollHeight;
-  }
+    const time = new Date().toLocaleTimeString();
+    const label = type === 'final' ? 'FINAL' : 'PARTIAL';
+    
+    div.innerHTML = `
+        <div class="text-xs text-gray-400 mb-1">${label} - ${time}</div>
+        <div class="text-lg">${text}</div>
+    `;
+    
+    transcriptsDiv.appendChild(div);
+    transcriptsDiv.scrollTop = transcriptsDiv.scrollHeight;
+    
+    if (type === 'final') {
+        transcriptCount++;
+        console.log(`🎯 TRANSCRIPT #${transcriptCount}: ${text}`);
+    }
+}
 
-  // Start recording and streaming
-  async function startRecording() {
-    try {
-      // Connect WebSocket
-      const wsUrl = `ws://${window.location.host}/ws/audio/${SESSION_ID}`;
-      socket = new WebSocket(wsUrl);
+// Audio processing
+function floatTo16BitPCM(float32Array) {
+    const buffer = new ArrayBuffer(float32Array.length * 2);
+    const view = new DataView(buffer);
+    for (let i = 0; i < float32Array.length; i++) {
+        const s = Math.max(-1, Math.min(1, float32Array[i]));
+        view.setInt16(i * 2, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+    }
+    return buffer;
+}
 
-      socket.onopen = () => {
-        console.log('WebSocket connected');
-        statusText.textContent = "🎤 Streaming...";
-        addMessage('user', '🎤 Audio stream started...');
-      };
-
-      socket.onerror = (err) => console.error('WebSocket error:', err);
-      socket.onclose = (e) => console.log('WebSocket closed:', e);
-
-      // Start recording
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      recorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
-
-      // Send chunks every 500ms
-      recorder.ondataavailable = (e) => {
-        if (e.data.size > 0 && socket?.readyState === WebSocket.OPEN) {
-          socket.send(e.data);
+function resampleTo16kHz(inputData, inputSampleRate) {
+    const targetSampleRate = 16000;
+    if (inputSampleRate === targetSampleRate) return inputData;
+    
+    const ratio = inputSampleRate / targetSampleRate;
+    const outputLength = Math.round(inputData.length / ratio);
+    const output = new Float32Array(outputLength);
+    
+    for (let i = 0; i < outputLength; i++) {
+        const index = i * ratio;
+        const indexInt = Math.floor(index);
+        const fraction = index - indexInt;
+        
+        if (indexInt + 1 < inputData.length) {
+            output[i] = inputData[indexInt] * (1 - fraction) + inputData[indexInt + 1] * fraction;
+        } else {
+            output[i] = inputData[indexInt];
         }
-      };
-
-      recorder.start(500); // Send every 500ms
-      isRecording = true;
-      recordBtn.classList.add('animate-wave', 'bg-red-500');
-    } catch (err) {
-      console.error('Microphone access failed:', err);
-      statusText.textContent = 'Mic error';
-      setTimeout(() => statusText.textContent = 'Ready', 2000);
     }
-  }
+    
+    return output;
+}
 
-  // Stop recording
-  function stopRecording() {
-    if (recorder && isRecording) {
-      recorder.stop();
-      recorder.stream.getTracks().forEach(t => t.stop()); // Stop mic
-      isRecording = false;
+// Start recording
+async function startRecording() {
+    try {
+        console.log('🎤 Starting recording...');
+        statusDiv.textContent = 'Connecting...';
+        
+        // Create WebSocket
+        socket = new WebSocket(`ws://${location.host}/ws/transcribe/${SESSION_ID}`);
+        
+        socket.onopen = () => {
+            connectionDiv.textContent = 'Connected';
+            connectionDiv.className = 'text-sm text-green-400 mt-1';
+            console.log('✅ WebSocket connected');
+        };
+        
+        socket.onmessage = (event) => {
+            const msg = event.data;
+            if (msg.startsWith('✅')) {
+                addTranscript('final', msg.substring(2).trim());
+            } else if (msg.startsWith('⏳')) {
+                addTranscript('partial', msg.substring(2).trim());
+            } else {
+                addTranscript('info', msg);
+            }
+        };
+        
+        socket.onerror = (error) => {
+            console.error('❌ WebSocket error:', error);
+            connectionDiv.textContent = 'Connection Error';
+            connectionDiv.className = 'text-sm text-red-400 mt-1';
+        };
+        
+        socket.onclose = () => {
+            connectionDiv.textContent = 'Disconnected';
+            connectionDiv.className = 'text-sm text-gray-500 mt-1';
+            console.log('🔌 WebSocket closed');
+        };
+        
+        // Get microphone
+        mediaStream = await navigator.mediaDevices.getUserMedia({
+            audio: {
+                sampleRate: 16000,
+                channelCount: 1,
+                echoCancellation: true,
+                noiseSuppression: true
+            }
+        });
+        
+        // Create audio context
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        const source = audioContext.createMediaStreamSource(mediaStream);
+        processor = audioContext.createScriptProcessor(4096, 1, 1);
+        
+        processor.onaudioprocess = (e) => {
+            if (!isRecording || !socket || socket.readyState !== WebSocket.OPEN) {
+                return;
+            }
+            
+            const inputData = e.inputBuffer.getChannelData(0);
+            const resampled = resampleTo16kHz(inputData, audioContext.sampleRate);
+            const pcmData = floatTo16BitPCM(resampled);
+            socket.send(pcmData);
+        };
+        
+        source.connect(processor);
+        processor.connect(audioContext.destination);
+        
+        isRecording = true;
+        statusDiv.textContent = '🎤 Recording...';
+        startBtn.disabled = true;
+        stopBtn.disabled = false;
+        
+        console.log('✅ Recording started');
+        console.log(`📊 Sample Rate: ${audioContext.sampleRate}Hz`);
+        
+    } catch (error) {
+        console.error('❌ Error starting:', error);
+        statusDiv.textContent = 'Error: ' + error.message;
+        connectionDiv.textContent = 'Error';
+        connectionDiv.className = 'text-sm text-red-400 mt-1';
     }
+}
 
-    // Let server close naturally — or keep open
+// Stop recording
+function stopRecording() {
+    console.log('⏹️ Stopping recording...');
+    isRecording = false;
+    
     if (socket) {
-      // Don't close immediately — let server finish
-      // socket.close(); // ❌ Remove this
+        socket.close();
+        socket = null;
     }
-
-    recordBtn.classList.remove('animate-wave', 'bg-red-500');
-    statusText.textContent = "Audio streamed!";
-  }
-
-  // Toggle recording
-  recordBtn.addEventListener('click', () => {
-    if (isRecording) {
-      stopRecording();
-    } else {
-      startRecording();
+    
+    if (processor) {
+        processor.disconnect();
+        processor = null;
     }
-  });
+    
+    if (audioContext) {
+        audioContext.close();
+        audioContext = null;
+    }
+    
+    if (mediaStream) {
+        mediaStream.getTracks().forEach(track => track.stop());
+        mediaStream = null;
+    }
+    
+    statusDiv.textContent = 'Stopped';
+    startBtn.disabled = false;
+    stopBtn.disabled = true;
+    
+    console.log('✅ Recording stopped');
+    console.log(`📊 Total transcripts: ${transcriptCount}`);
+}
+
+// Event listeners
+startBtn.addEventListener('click', startRecording);
+stopBtn.addEventListener('click', stopRecording);
+
+// Cleanup on page unload
+window.addEventListener('beforeunload', () => {
+    if (isRecording) stopRecording();
+});
+
+console.log('🚀 Day 17: AssemblyAI Real-time Transcription Ready!');
+console.log(`📱 Session: ${SESSION_ID}`);
 </script>
-
 </body>
 </html>
