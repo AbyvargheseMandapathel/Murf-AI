@@ -3,16 +3,16 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Day 17: AssemblyAI Transcription</title>
+  <title>Day 18: AssemblyAI Turn Detection</title>
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-gray-900 text-white min-h-screen flex items-center justify-center p-4">
   <div class="w-full max-w-4xl bg-gray-800 rounded-xl p-8">
     <header class="text-center mb-8">
       <h1 class="text-4xl font-bold text-cyan-400 mb-2">
-        🎙️ Day 17: Real-time Transcription
+        🎙️ Day 18: Turn Detection
       </h1>
-      <p class="text-gray-400">AssemblyAI WebSocket Streaming</p>
+      <p class="text-gray-400">AssemblyAI WebSocket Streaming with Turn Detection (Final Transcripts Only)</p>
       <div class="mt-4 text-sm bg-gray-700 rounded p-3">
         <strong>Format:</strong> 16kHz, 16-bit, Mono PCM
       </div>
@@ -22,7 +22,7 @@
     <div id="transcripts" class="bg-gray-900 rounded-lg p-6 h-96 overflow-y-auto mb-6">
       <div class="text-center text-gray-500 py-20">
         <div class="text-6xl mb-4">🎧</div>
-        <p>Click Start to begin real-time transcription</p>
+        <p>Click Start to begin real-time transcription with turn detection</p>
       </div>
     </div>
 
@@ -44,7 +44,7 @@
   </div>
 
 <script>
-const SESSION_ID = 'day17-' + Date.now();
+const SESSION_ID = 'day18-' + Date.now();
 const transcriptsDiv = document.getElementById('transcripts');
 const statusDiv = document.getElementById('status');
 const connectionDiv = document.getElementById('connection');
@@ -65,31 +65,29 @@ function clearPlaceholder() {
     }
 }
 
-// Add transcript
+// Add transcript with appropriate styling
 function addTranscript(type, text) {
     clearPlaceholder();
     
     const div = document.createElement('div');
-    div.className = `mb-3 p-3 rounded ${type === 'final' ? 'bg-green-900 border-l-4 border-green-400' : 'bg-blue-900 border-l-4 border-blue-400'}`;
+    // Only show final transcriptions with green background
+    div.className = 'mb-3 p-3 rounded bg-green-900 border-l-4 border-green-400 shadow';
     
     const time = new Date().toLocaleTimeString();
-    const label = type === 'final' ? 'FINAL' : 'PARTIAL';
     
     div.innerHTML = `
-        <div class="text-xs text-gray-400 mb-1">${label} - ${time}</div>
+        <div class="text-xs text-gray-400 mb-1">✅ FINAL - ${time}</div>
         <div class="text-lg">${text}</div>
     `;
     
     transcriptsDiv.appendChild(div);
     transcriptsDiv.scrollTop = transcriptsDiv.scrollHeight;
     
-    if (type === 'final') {
-        transcriptCount++;
-        console.log(`🎯 TRANSCRIPT #${transcriptCount}: ${text}`);
-    }
+    transcriptCount++;
+    console.log(`🎯 TRANSCRIPT #${transcriptCount}: ${text}`);
 }
 
-// Audio processing
+// Convert float32 array to 16-bit PCM
 function floatTo16BitPCM(float32Array) {
     const buffer = new ArrayBuffer(float32Array.length * 2);
     const view = new DataView(buffer);
@@ -100,6 +98,7 @@ function floatTo16BitPCM(float32Array) {
     return buffer;
 }
 
+// Resample audio to 16kHz
 function resampleTo16kHz(inputData, inputSampleRate) {
     const targetSampleRate = 16000;
     if (inputSampleRate === targetSampleRate) return inputData;
@@ -129,7 +128,7 @@ async function startRecording() {
         console.log('🎤 Starting recording...');
         statusDiv.textContent = 'Connecting...';
         
-        // Create WebSocket
+        // Create WebSocket connection
         socket = new WebSocket(`ws://${location.host}/ws/transcribe/${SESSION_ID}`);
         
         socket.onopen = () => {
@@ -142,10 +141,9 @@ async function startRecording() {
             const msg = event.data;
             if (msg.startsWith('✅')) {
                 addTranscript('final', msg.substring(2).trim());
-            } else if (msg.startsWith('⏳')) {
-                addTranscript('partial', msg.substring(2).trim());
             } else {
-                addTranscript('info', msg);
+                // Handle other messages (errors, status) if needed
+                console.log('Info message:', msg);
             }
         };
         
@@ -161,7 +159,7 @@ async function startRecording() {
             console.log('🔌 WebSocket closed');
         };
         
-        // Get microphone
+        // Get microphone access
         mediaStream = await navigator.mediaDevices.getUserMedia({
             audio: {
                 sampleRate: 16000,
@@ -248,7 +246,7 @@ window.addEventListener('beforeunload', () => {
     if (isRecording) stopRecording();
 });
 
-console.log('🚀 Day 17: AssemblyAI Real-time Transcription Ready!');
+console.log('🚀 Day 18: AssemblyAI Turn Detection Ready!');
 console.log(`📱 Session: ${SESSION_ID}`);
 </script>
 </body>

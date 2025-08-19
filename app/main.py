@@ -1,4 +1,4 @@
-# main.py - Day 17 Simplified Working Solution
+# main.py - Day 18: Turn Detection with AssemblyAI
 import asyncio
 import time
 from fastapi import FastAPI, File, UploadFile, Path, HTTPException, WebSocket, WebSocketDisconnect
@@ -24,7 +24,6 @@ from assemblyai.streaming.v3 import (
     TerminationEvent,
     TurnEvent,
 )
-import asyncio
 
 # Set the AssemblyAI API key globally
 aai.settings.api_key = settings.ASSEMBLYAI_API_KEY
@@ -153,21 +152,21 @@ async def agent_chat(session_id: str = Path(...), file: UploadFile = File(...)):
 os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
 
 # ----------------------------
-# DAY 17: Updated WebSocket + AssemblyAI V3 Real-time Transcription
+# DAY 18: Turn Detection with AssemblyAI V3 - Final Transcripts Only
 # ----------------------------
-
 
 @app.websocket("/ws/transcribe/{session_id}")
 async def websocket_transcribe_handler(websocket: WebSocket, session_id: str):
     """
-    Day 17: Final WebSocket handler for real-time transcription using AssemblyAI V3 SDK.
+    Day 18: WebSocket handler for real-time transcription with turn detection using AssemblyAI V3 SDK.
+    Only sends final transcriptions when end_of_turn is detected.
     """
     await websocket.accept()
-    print(f"\n🎤 === DAY 17: WebSocket Connected ===")
+    print(f"\n🎤 === DAY 18: WebSocket Connected ===")
     print(f"📱 Session ID: {session_id}")
     
     client = None
-    # --- Add a flag to track WebSocket connection state ---
+    # Track WebSocket connection state
     websocket_closed = False
     is_connected = True
     
@@ -175,27 +174,28 @@ async def websocket_transcribe_handler(websocket: WebSocket, session_id: str):
     main_loop = asyncio.get_running_loop()
 
     try:
-        # --- Event Handlers ---
+        # Event Handlers
         def on_begin(self, event: BeginEvent):
             print(f"✅ AssemblyAI Session started: {event.id}")
 
         def on_turn(self, event: TurnEvent):
             try:
+                # Only process transcripts that have content
                 if event.transcript.strip():
-                    # Determine if this is a final transcript
+                    # Only send message when we detect the end of a turn
                     if event.end_of_turn:
                         print(f"\n🎯 FINAL TRANSCRIPT: {event.transcript}")
                         message = f"✅ {event.transcript}"
-                    else:
-                        print(f"⏳ Partial Turn: {event.transcript}")
-                        message = f"⏳ {event.transcript}"
-                    
-                    # Only try to send if the WebSocket is still open
-                    if not websocket_closed:
-                        main_loop.create_task(send_safe(websocket, message))
-                    else:
-                        print("ℹ️ WebSocket closed, not sending transcript.")
                         
+                        # Only send if WebSocket is still open
+                        if not websocket_closed:
+                            main_loop.create_task(send_safe(websocket, message))
+                        else:
+                            print("ℹ️ WebSocket closed, not sending transcript.")
+                    
+                    # Ignore partial transcriptions - don't send anything
+                    # This implements the "only show final" requirement
+                    
             except Exception as e:
                 print(f"❌ Error in on_turn: {e}")
 
@@ -205,7 +205,7 @@ async def websocket_transcribe_handler(websocket: WebSocket, session_id: str):
         def on_error(self, error: StreamingError):
             error_msg = f"❌ Streaming Error: {error}"
             print(error_msg)
-            # Only try to send if the WebSocket is still open
+            # Only send if WebSocket is still open
             if not websocket_closed:
                 main_loop.create_task(send_safe(websocket, error_msg))
 
@@ -214,13 +214,13 @@ async def websocket_transcribe_handler(websocket: WebSocket, session_id: str):
             try:
                 await ws.send_text(message)
             except Exception as e:
-                # This exception is expected if the WebSocket is closed.
-                # We check 'websocket_closed' before sending, so we can ignore this.
+                # This exception is expected if the WebSocket is closed
+                # We check 'websocket_closed' before sending, so we can ignore this
                 if "after sending 'websocket.close'" not in str(e):
                     print(f"⚠️ Unexpected send error: {e}")
                 pass
 
-        # --- Initialize and Connect ---
+        # Initialize and Connect to AssemblyAI
         print("🔄 Initializing AssemblyAI V3 StreamingClient...")
         client = StreamingClient(
             StreamingClientOptions(
@@ -229,6 +229,7 @@ async def websocket_transcribe_handler(websocket: WebSocket, session_id: str):
             )
         )
         
+        # Register event handlers
         client.on(StreamingEvents.Begin, on_begin)
         client.on(StreamingEvents.Turn, on_turn)
         client.on(StreamingEvents.Termination, on_terminated)
@@ -239,13 +240,16 @@ async def websocket_transcribe_handler(websocket: WebSocket, session_id: str):
             StreamingParameters(
                 sample_rate=16000,
                 format_turns=True,
+                end_of_turn_confidence_threshold=0.7,
+                min_end_of_turn_silence_when_confident=160,
+                max_turn_silence=2400
             )
         )
         print("✅ Connected to AssemblyAI successfully!")
         
         await websocket.send_text("🎤 Ready to transcribe! Start speaking...")
 
-        # --- Main Audio Processing Loop ---
+        # Main Audio Processing Loop
         chunk_count = 0
         while is_connected:
             try:
@@ -255,12 +259,12 @@ async def websocket_transcribe_handler(websocket: WebSocket, session_id: str):
                 if chunk_count % 50 == 0:
                     print(f"📊 Processed {chunk_count} audio chunks")
                 
+                # Stream audio to AssemblyAI
                 client.stream(audio_bytes)
                 
             except WebSocketDisconnect:
                 print(f"🔌 Client disconnected: {session_id}")
                 is_connected = False
-                # Mark the WebSocket as closed to prevent further sends
                 websocket_closed = True
                 break
                 
@@ -291,4 +295,4 @@ async def websocket_transcribe_handler(websocket: WebSocket, session_id: str):
             except Exception as e:
                 print(f"ℹ️ Client disconnect: {e}")
         
-        print("=== DAY 17: Session Complete ===\n")
+        print("=== DAY 18: Session Complete ===\n")
