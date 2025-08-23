@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Voice Agent with Murf & AssemblyAI</title>
+  <style>
+    :root {
+      --bg: #000;
+      --text: #fff;
+      --primary: #00aaff;
+      --secondary: #0a3d62;
+      --border: #333;
+      --card-bg: #111;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Segoe UI', sans-serif;
+      padding: 20px;
+    }
+
+    h1, h2 {
+      color: var(--primary);
+    }
+
+    .container {
+      max-width: 800px;
+      margin: auto;
+    }
+
+    button {
+      background: var(--secondary);
+      color: white;
+      border: 1px solid var(--primary);
+      padding: 12px 24px;
+      font-size: 16px;
+      border-radius: 8px;
+      cursor: pointer;
+      margin: 10px 5px;
+    }
+
+    button:hover {
+      background: var(--primary);
+    }
+
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .status {
+      display: flex;
+      align-items: center;
+      font-size: 14px;
+      margin: 10px 0;
+    }
+
+    .status-indicator {
+      width: 12px;
+      height: 12px;
+      background: #f00;
+      border-radius: 50%;
+      margin-right: 8px;
+      transition: background 0.3s;
+    }
+
+    .status-indicator.active {
+      background: #0f0;
+    }
+
+    #transcriptSection {
+      margin: 20px 0;
+      padding: 15px;
+      background: var(--card-bg);
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      max-height: 300px;
+      overflow-y: auto;
+      font-size: 16px;
+    }
+
+    #transcriptSection p {
+      margin: 10px 0;
+      padding: 10px 12px;
+      border-radius: 8px;
+      line-height: 1.5;
+    }
+
+    #transcriptSection p.user {
+      background: #222;
+      color: #ccc;
+    }
+
+    #transcriptSection p.bot {
+      background: var(--secondary);
+      color: #fff;
+    }
+
+    .loading {
+      color: var(--primary);
+      font-style: italic;
+    }
+
+    .error {
+      color: #ff3333;
+      background: #330000;
+      padding: 10px;
+      border-radius: 8px;
+      margin: 10px 0;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Voice Agent 🎙️</h1>
+    <p>Press <strong>Record</strong> to speak. Bot responds in real time.</p>
+
+    <div class="status">
+      <div id="botListening" class="status-indicator"></div>
+      <span>Listening...</span>
+    </div>
+    <div class="status">
+      <div id="botSpeaking" class="status-indicator"></div>
+      <span>Speaking...</span>
+    </div>
+
+    <button id="recordButton">🎙️ Start Recording</button>
+    <button id="stopButton" disabled>⏹️ Stop</button>
+
+    <div id="llmLoading" class="loading" style="display:none">Generating response...</div>
+    <div id="errorContainer" class="error" style="display:none">
+      <span id="errorText"></span>
+    </div>
+
+    <h2>Conversation</h2>
+    <div id="transcriptSection"></div>
+
+    <audio id="recordingPlayer" controls style="display:none;"></audio>
+  </div>
+
+  <script>
+  const recordButton = document.getElementById("recordButton");
+  const stopButton = document.getElementById("stopButton");
+  const botListening = document.getElementById("botListening");
+  const botSpeaking = document.getElementById("botSpeaking");
+  const llmLoading = document.getElementById("llmLoading");
+  const errorContainer = document.getElementById("errorContainer");
+  const errorText = document.getElementById("errorText");
+  const transcriptSection = document.getElementById("transcriptSection");
+
+  let websocket = null;
+  let isRecording = false;
+  let audioContext = null;
+  let source = null;
+  let scriptProcessor = null;
+  let currentContextId = null;
+  let audioChunks = [];
+
+  function floatTo16BitPCM(float32Array) {
+    const buffer = new ArrayBuffer(float32Array.length * 2);
+    const view = new DataView(buffer);
+    for (let i = 0; i < float32Array.length; i++) {
+      const s = Math.max(-1, Math.min(1, float32Array[i]));
+      view.setInt16(i * 2, s < 0 ? s * 0x8000 : s * 0x7fff, true);
+    }
+    return buffer;
+  }
+
+  function setupWebSocket() {
+    const protocol = window.location.protocol === "https:" ? "wss" : "ws";
+    const wsUrl = `${protocol}://${window.location.host}/ws`;
+    websocket = new WebSocket(wsUrl);
+
+    websocket.onopen = () => console.log("🟢 WS: Connected");
+
+    websocket.onmessage = async (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        console.log("📩 Received:", data);
+
+        // Show bot is thinking
+        if (data.event === "status" && data.status === "thinking") {
+          llmLoading.style.display = "block";
+        }
+
+        // Transcript
+        if (data.event === "transcript") {
+          const p = document.createElement("p");
+          p.className = data.type;
+          p.innerHTML = `<strong>${data.type === "user" ? "You" : "Bot"}:</strong> ${data.text}`;
+          transcriptSection.appendChild(p);
+          transcriptSection.scrollTop = transcriptSection.scrollHeight;
+
+          if (data.type === "bot") {
+            llmLoading.style.display = "none";
+          }
+        }
+
+        // Audio Chunk
+        if (data.event === "audio_chunk") {
+          if (data.context_id) {
+            if (!currentContextId || currentContextId !== data.context_id) {
+              currentContextId = data.context_id;
+              audioChunks = [];
+              botSpeaking.classList.add("active");
+              console.log("🆕 New context:", currentContextId);
+            }
+
+            if (data.audio_base64) {
+              const bytes = base64ToUint8Array(data.audio_base64);
+              audioChunks.push(bytes);
+              console.log(`🔊 Chunk ${data.chunk_index || 1} added`);
+            }
+
+            if (data.is_final) {
+              console.log(`✅ Final chunk. Playing ${audioChunks.length} chunks...`);
+              playAudio();
+            }
+          }
+        }
+
+        // Error
+        if (data.event === "error") {
+          llmLoading.style.display = "none";
+          showError(data.message);
+        }
+
+      } catch (err) {
+        console.warn("⚠️ Parse error:", event.data);
+      }
+    };
+
+    websocket.onclose = () => {
+      console.log("🔁 WS: Reconnecting...");
+      setTimeout(setupWebSocket, 3000);
+    };
+
+    websocket.onerror = (e) => {
+      console.error("🔴 WS: Error", e);
+      showError("Connection error");
+    };
+  }
+
+  function base64ToUint8Array(base64) {
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    return bytes;
+  }
+
+  function playAudio() {
+    if (audioChunks.length === 0) {
+      console.warn("No audio to play");
+      return;
+    }
+
+    const blob = new Blob(audioChunks, { type: "audio/wav" });
+    const audio = new Audio(URL.createObjectURL(blob));
+
+    audio.play().then(() => {
+      console.log("▶️ Audio playing...");
+    }).catch(e => {
+      console.error("🔇 Autoplay blocked:", e);
+      showError("Click to play audio");
+    });
+
+    audio.onended = () => {
+      console.log("⏹️ Audio ended");
+      botSpeaking.classList.remove("active");
+      URL.revokeObjectURL(audio.src);
+    };
+
+    audio.onerror = () => {
+      console.error("🎧 Error:", audio.error);
+      botSpeaking.classList.remove("active");
+    };
+  }
+
+  function showError(msg) {
+    errorText.innerText = msg;
+    errorContainer.style.display = "block";
+    setTimeout(() => errorContainer.style.display = "none", 5000);
+  }
+
+  // Recording Controls
+  recordButton.onclick = async () => {
+    if (!websocket || websocket.readyState !== WebSocket.OPEN) setupWebSocket();
+
+    isRecording = true;
+    recordButton.disabled = true;
+    stopButton.disabled = false;
+    botListening.classList.add("active");
+    llmLoading.style.display = "block";
+
+    try {
+      audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      source = audioContext.createMediaStreamSource(stream);
+      scriptProcessor = audioContext.createScriptProcessor(4096, 1, 1);
+
+      scriptProcessor.onaudioprocess = (e) => {
+        if (!isRecording) return;
+        const inputData = e.inputBuffer.getChannelData(0);
+        const pcm = floatTo16BitPCM(inputData);
+        if (websocket.readyState === WebSocket.OPEN) {
+          websocket.send(pcm);
+        }
+      };
+
+      source.connect(scriptProcessor);
+      scriptProcessor.connect(audioContext.destination);
+    } catch (err) {
+      console.error("🎤 Mic error:", err);
+      showError("Mic access denied");
+      stopRecording();
+    }
+  };
+
+  stopButton.onclick = stopRecording;
+
+  function stopRecording() {
+    isRecording = false;
+    botListening.classList.remove("active");
+    llmLoading.style.display = "none";
+    if (scriptProcessor) scriptProcessor.disconnect();
+    if (source) source.disconnect();
+    if (audioContext) audioContext.close();
+    recordButton.disabled = false;
+    stopButton.disabled = true;
+  }
+</script>
+</body>
+</html>
