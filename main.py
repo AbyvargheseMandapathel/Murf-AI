@@ -1,92 +1,100 @@
-import os
-import json
-import asyncio
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+# main.py
+from fastapi import FastAPI, Request, WebSocket
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
-from dotenv import load_dotenv
+from fastapi.templating import Jinja2Templates
+import logging
+import asyncio
+import base64
+import re
+import json
 
-# AI Services
-import assemblyai as aai
-import google.generativeai as genai
-from services.murf_service import MurfService
-from services.assembly_service import AssemblyAIStreamingClient
+# Import services and config
+from services import stt, llm, tts
 
-# Load environment variables
-load_dotenv()
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-MURF_API_KEY = os.getenv("MURF_API_KEY")
-ASSEMBLYAI_API_KEY = os.getenv("ASSEMBLYAI_API_KEY")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-
-if not all([MURF_API_KEY, ASSEMBLYAI_API_KEY, GEMINI_API_KEY]):
-    raise RuntimeError("❌ Missing one or more API keys in .env file")
-
-# Configure APIs
-aai.settings.api_key = ASSEMBLYAI_API_KEY
-genai.configure(api_key=GEMINI_API_KEY)
-
-# Define the persona for Mayavi
-persona = """
-You are Mayavi, a mischievous and helpful imp from a magical forest.
-You protect the forest and its inhabitants from villains and dark wizards.
-Your language should be a bit whimsical and magical, reflecting your nature.
-You often refer to yourself as "this imp" or "Mayavi."
-Always maintain your friendly but sly demeanor, and answer questions as if you were speaking to a friend you are protecting.
-"""
-
-# FastAPI app
 app = FastAPI()
+
+# Mount static files for CSS/JS
 app.mount("/static", StaticFiles(directory="static"), name="static")
+templates = Jinja2Templates(directory="templates")
 
 
 @app.get("/")
-async def root():
-    """Serve the frontend HTML file."""
-    return FileResponse("static/index.html")
+async def home(request: Request):
+    """Serves the main HTML page."""
+    return templates.TemplateResponse("index.html", {"request": request})
 
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
+    """Handles WebSocket connection for real-time transcription and voice response."""
     await websocket.accept()
-    loop = asyncio.get_running_loop()
+    logging.info("WebSocket client connected.")
 
-    aai_client = AssemblyAIStreamingClient(websocket, loop)
-    murf_service = MurfService(websocket, MURF_API_KEY)
+    loop = asyncio.get_event_loop()
+    chat_history = []
+    api_keys = {}
+
+    async def handle_transcript(text: str):
+        """Processes the final transcript, gets LLM and TTS responses, and streams audio."""
+        await websocket.send_json({"type": "final", "text": text})
+        try:
+            # 1. Decide whether to search the web
+            if llm.should_search_web(text, api_keys.get("gemini")):
+                full_response, updated_history = llm.get_web_response(text, chat_history, api_keys.get("gemini"), api_keys.get("serpapi"))
+            else:
+                full_response, updated_history = llm.get_llm_response(text, chat_history, api_keys.get("gemini"))
+            
+            # Update history for the next turn
+            chat_history.clear()
+            chat_history.extend(updated_history)
+
+            # Send the full text response to the UI
+            await websocket.send_json({"type": "assistant", "text": full_response})
+
+            # 2. Split the response into sentences
+            sentences = re.split(r'(?<=[.?!])\s+', full_response.strip())
+            
+            # 3. Process each sentence for TTS and stream audio back
+            for sentence in sentences:
+                if sentence.strip():
+                    # Run the blocking TTS function in a separate thread
+                    audio_bytes = await loop.run_in_executor(
+                        None, tts.speak, sentence.strip(), api_keys.get("murf")
+                    )
+                    if audio_bytes:
+                        b64_audio = base64.b64encode(audio_bytes).decode('utf-8')
+                        await websocket.send_json({"type": "audio", "b64": b64_audio})
+
+        except Exception as e:
+            logging.error(f"Error in LLM/TTS pipeline: {e}")
+            await websocket.send_json({"type": "llm", "text": "Sorry, I encountered an error."})
+
+
+    def on_final_transcript(text: str):
+        logging.info(f"Final transcript received: {text}")
+        asyncio.run_coroutine_threadsafe(handle_transcript(text), loop)
 
     try:
+        # The first message from the client should be the API keys
+        config_data = await websocket.receive_text()
+        config = json.loads(config_data)
+        if config.get("type") == "config":
+            api_keys = config.get("keys", {})
+
+        transcriber = stt.AssemblyAIStreamingTranscriber(
+            on_final_callback=on_final_transcript, 
+            api_key=api_keys.get("assemblyai")
+        )
+
         while True:
-            msg = await websocket.receive()
-
-            # Handle audio stream
-            if "bytes" in msg:
-                aai_client.stream(msg["bytes"])
-
-            # Handle text-based messages
-            elif "text" in msg:
-                data = json.loads(msg["text"])
-
-                if data.get("event") == "transcript" and data.get("status") == "final":
-                    # Notify client that AI is thinking
-                    await websocket.send_json({"event": "status", "status": "thinking"})
-
-                    # Get Gemini response (run in thread if async not supported)
-                    model = genai.GenerativeModel("gemini-1.5-flash",)
-                    response = await asyncio.to_thread(model.generate_content, data["text"])
-                    bot_text = response.text or "I'm not sure."
-
-                    # Send AI transcript back to frontend
-                    await websocket.send_json({
-                        "event": "transcript",
-                        "text": bot_text,
-                        "type": "bot"
-                    })
-
-                    # Convert response to speech
-                    await murf_service.synthesize_speech(bot_text)
-
-    except WebSocketDisconnect:
-        pass
+            data = await websocket.receive_bytes()
+            transcriber.stream_audio(data)
+    except Exception as e:
+        logging.info(f"WebSocket connection closed: {e}")
     finally:
-        aai_client.close()
-        await murf_service.close()
+        if 'transcriber' in locals() and transcriber:
+            transcriber.close()
+        logging.info("Transcription resources released.")
